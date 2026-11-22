@@ -106,17 +106,46 @@ function renderState() {
   byId("tasks").querySelectorAll("input, button").forEach(control => { control.disabled = !online || busy; });
 }
 
+function sectionColor(key) {
+  if (!key) return "#d8e3f6";
+  const details = snapshot?.category_details?.find(item => item.id === key);
+  return snapshot?.category_colors?.[details?.color] ?? snapshot?.category_colors?.blue ?? "var(--accent)";
+}
+
+function sectionMark() {
+  const mark = make("span", undefined, "section-mark");
+  mark.setAttribute("aria-hidden", "true");
+  return mark;
+}
+
 function weekView() {
   const monday = addDays(selectedDay, -((new Date(selectedDay + "T12:00:00Z").getUTCDay() + 6) % 7));
   const buttons = Array.from({length: 7}, (_, i) => {
     const day = addDays(monday, i);
     const counts = snapshot?.week[day];
-    const open = section ? counts?.categories[section] : counts;
+    const open = section ? counts?.categories?.[section] : counts;
     const button = make("button");
-    button.setAttribute("aria-label", formatDay(day, {weekday: "long", day: "numeric", month: "long"}));
+    const label = [formatDay(day, {weekday: "long", day: "numeric", month: "long"})];
     if (day === selectedDay) button.setAttribute("aria-current", "date");
     button.append(make("span", formatDay(day, {weekday: "short"})), make("strong", String(Number(day.slice(-2)))));
-    if (open?.total) button.append(make("span", `${open.done}/${open.total}`));
+    if (open?.total) {
+      button.append(make("span", `${open.done}/${open.total}`, "week-count"));
+      label.push(`${open.done} из ${open.total} выполнено`);
+      if (section) {
+        button.classList.add("week-section");
+        button.style.setProperty("--section-color", sectionColor(section));
+      }
+      const marks = make("span", undefined, "week-marks");
+      for (const [key, name] of Object.entries(snapshot?.categories ?? {})) {
+        if ((section && section !== key) || !counts?.categories?.[key]?.total) continue;
+        const mark = sectionMark();
+        mark.style.setProperty("--section-color", sectionColor(key));
+        marks.append(mark);
+        label.push(name);
+      }
+      if (marks.childElementCount) button.append(marks);
+    }
+    button.setAttribute("aria-label", label.join(", "));
     button.onclick = () => selectDay(day);
     return button;
   });
@@ -129,7 +158,9 @@ function render() {
   weekView();
   const choices = [["", "Все"], ...Object.entries(snapshot?.categories ?? {})];
   byId("sections").replaceChildren(...choices.map(([key, name]) => {
-    const button = make("button", name);
+    const button = make("button");
+    button.style.setProperty("--section-color", sectionColor(key));
+    button.append(sectionMark(), make("span", name, "section-name"));
     button.setAttribute("aria-pressed", String(key === section));
     button.onclick = () => { section = key; render(); byId("sections").querySelector('[aria-pressed="true"]').focus(); };
     return button;
@@ -143,6 +174,7 @@ function render() {
 
 function taskCard(row) {
   const card = make("article", undefined, row.done ? "task done" : "task");
+  card.style.setProperty("--section-color", sectionColor(row.category));
   const line = make("div", undefined, "task-line");
   const label = make("label", undefined, "check");
   const checkbox = make("input");
@@ -155,7 +187,10 @@ function taskCard(row) {
   label.append(checkbox);
   const button = make("button", undefined, "task-name");
   const time = row.end_time ? `${row.time} – ${row.end_time}` : row.time;
-  button.append(make("strong", row.text), make("small", [time, snapshot.categories[row.category]].filter(Boolean).join(" · ")));
+  const category = snapshot.categories[row.category];
+  const meta = make("small", time);
+  if (category) meta.append(time ? " · " : "", make("span", category, "task-section"));
+  button.append(make("strong", row.text), meta);
   button.onclick = () => openEditor(row);
   line.append(label, button);
   card.append(line);
