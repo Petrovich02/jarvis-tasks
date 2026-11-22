@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101824">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://*.ngrok-free.dev; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Задачник Джарвиса</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icon.png">
+  <link rel="icon" href="icon.png">
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <main>
+    <header class="top">
+      <div>
+        <h1>Мой день</h1>
+        <p id="status" role="status">Задачник Джарвиса</p>
+      </div>
+      <button id="disconnect" class="quiet" hidden>Отключить</button>
+    </header>
+
+    <section id="connection" class="panel" hidden aria-labelledby="connection-title">
+      <h2 id="connection-title">Подключить Джарвиса</h2>
+      <form id="connect-form">
+        <label for="key">Ключ подключения с компьютера</label>
+        <input id="key" type="password" required maxlength="180" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <button class="primary">Подключить</button>
+      </form>
+      <p id="connect-error" class="error" role="alert"></p>
+    </section>
+
+    <section id="planner" hidden aria-label="Задачи">
+      <nav class="date-controls" aria-label="Выбор даты">
+        <button id="previous" class="quiet" aria-label="Предыдущий день">‹</button>
+        <input id="day" type="date" aria-label="Дата задач" min="2000-01-01" max="2100-12-31">
+        <button id="next" class="quiet" aria-label="Следующий день">›</button>
+        <button id="today" class="quiet">Сегодня</button>
+      </nav>
+      <nav id="week" aria-label="Дни недели"></nav>
+      <nav id="sections" aria-label="Разделы задач"></nav>
+      <div class="list-header">
+        <h2 id="list-heading">Задачи</h2>
+        <button id="add-task" class="primary">＋ Задача</button>
+      </div>
+      <p id="list-error" class="error" role="alert"></p>
+      <div id="tasks"></div>
+    </section>
+
+    <dialog id="editor" aria-labelledby="editor-title">
+      <form id="task-form">
+        <div class="list-header">
+          <h2 id="editor-title">Новая задача</h2>
+          <button type="button" id="close-editor" class="quiet" aria-label="Закрыть">×</button>
+        </div>
+        <label for="title">Название</label>
+        <input id="title" required maxlength="500">
+        <label for="category">Раздел</label>
+        <select id="category" required></select>
+        <label for="task-day">Дата</label>
+        <input id="task-day" type="date" required min="2000-01-01" max="2100-12-31">
+        <div class="times">
+          <label>Начало <input id="start" type="time"></label>
+          <label>Окончание <input id="end" type="time"></label>
+        </div>
+        <div class="list-header">
+          <h3>Подзадачи</h3>
+          <button id="add-step" type="button" class="quiet">＋ Добавить</button>
+        </div>
+        <div id="steps"></div>
+        <p id="edit-error" class="error" role="alert"></p>
+        <div class="editor-actions">
+          <button id="remove-task" type="button" class="danger" hidden>Удалить</button>
+          <button id="save-task" class="primary">Сохранить</button>
+        </div>
+      </form>
+    </dialog>
+    <noscript>Включи JavaScript для работы с задачником.</noscript>
+  </main>
+</body>
+</html>
