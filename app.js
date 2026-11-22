@@ -8,6 +8,9 @@ const make = (tag, text, className) => {
   return element;
 };
 const allowedOrigin = "https://tasks.voxforma.ru";
+const isTunnelPage = location.protocol === "https:" && location.hostname.endsWith(".ngrok-free.dev")
+  && location.pathname.startsWith("/mobile-planner/");
+const isPlannerSite = location.origin === allowedOrigin || isTunnelPage;
 const storagePrefix = "jarvis-tasks-v1:";
 const keyName = storagePrefix + "connection";
 const cacheName = storagePrefix + "days";
@@ -35,10 +38,11 @@ function store(key, value) {
 function readKey(value) {
   if (typeof value !== "string") return null;
   const match = /^([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.ngrok-free\.dev)~([A-Za-z0-9_-]{43})$/.exec(value.trim());
-  return match ? {endpoint: `https://${match[1]}/mobile-planner/tasks`, secret: match[2]} : null;
+  if (!match || isTunnelPage && match[1] !== location.hostname) return null;
+  return {endpoint: `https://${match[1]}/mobile-planner/tasks`, secret: match[2]};
 }
 
-let connection = location.origin === allowedOrigin ? readKey(readStorage(keyName, "")) : null;
+let connection = isPlannerSite ? readKey(readStorage(keyName, "")) : null;
 let cachedDays = connection ? readStorage(cacheName, []) : [];
 if (!Array.isArray(cachedDays)) cachedDays = [];
 let selectedDay = today();
@@ -305,7 +309,7 @@ byId("connect-form").onsubmit = async event => {
   const value = input.value.trim();
   const candidate = readKey(value);
   const errorText = byId("connect-error");
-  if (!candidate || location.origin !== allowedOrigin) {
+  if (!candidate || !isPlannerSite) {
     errorText.textContent = "Вставь ключ подключения целиком.";
     return;
   }
@@ -363,7 +367,7 @@ window.addEventListener("online", refresh);
 window.addEventListener("focus", refresh);
 setInterval(refresh, 60000);
 
-if (location.origin !== allowedOrigin) {
+if (!isPlannerSite) {
   byId("status").textContent = "Открой задачник по адресу tasks.voxforma.ru.";
 } else if (connection) {
   restoreDay(selectedDay);
@@ -371,6 +375,6 @@ if (location.origin !== allowedOrigin) {
 } else {
   renderState();
 }
-if (location.origin === allowedOrigin && "serviceWorker" in navigator) {
+if (isPlannerSite && "serviceWorker" in navigator) {
   navigator.serviceWorker.register("./sw.js").catch(() => {});
 }
