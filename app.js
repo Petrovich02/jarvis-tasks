@@ -55,7 +55,18 @@ let loading = false;
 let loadVersion = 0;
 let editing = null;
 let newTaskRequest = "";
+let categoryRequest = "";
+let categoryRevision = 0;
+let notices = null;
+let noticeLoading = false;
+let noticeBusy = false;
+let pushRegistration = null;
+let pushSubscription = null;
+let pushKey = null;
 const expandedTasks = new Set();
+const noticeSources = {personal: "Личные задачи", editing: "JCenter · заказы на монтаж", crm: "CRM", mailing: "Рассылка"};
+const colorLabels = {blue: "Голубой", green: "Зелёный", purple: "Сиреневый", peach: "Персиковый",
+  pink: "Розовый", teal: "Бирюзовый", yellow: "Жёлтый"};
 
 class ApiError extends Error {
   constructor(status, message) {
@@ -64,8 +75,8 @@ class ApiError extends Error {
   }
 }
 
-async function api({day, mutation, credentials = connection} = {}) {
-  const url = new URL(credentials.endpoint);
+async function api({day, mutation, credentials = connection, route = "tasks"} = {}) {
+  const url = new URL(route, credentials.endpoint);
   if (day) url.searchParams.set("day", day);
   const headers = {Authorization: `Bearer ${credentials.secret}`, "ngrok-skip-browser-warning": "1"};
   if (mutation) headers["Content-Type"] = "application/json";
@@ -97,12 +108,14 @@ function renderState() {
   byId("connection").hidden = Boolean(connection);
   byId("planner").hidden = !connection;
   byId("disconnect").hidden = !connection;
+  byId("show-notices").hidden = !connection;
   if (!connection) return;
   const last = cacheTime ? new Date(cacheTime).toLocaleTimeString("ru-RU", {hour: "2-digit", minute: "2-digit"}) : "";
   byId("status").textContent = online ? "Связь с Джарвисом" : loading ? "Подключаюсь…" :
     last ? `ПК недоступен · копия на ${last}` : "ПК недоступен";
   byId("day").value = selectedDay;
   byId("add-task").disabled = !online || busy || !snapshot;
+  byId("show-categories").disabled = !online || busy || !snapshot;
   byId("tasks").querySelectorAll("input, button").forEach(control => { control.disabled = !online || busy; });
 }
 
@@ -120,6 +133,7 @@ function sectionMark() {
 
 function weekView() {
   const monday = addDays(selectedDay, -((new Date(selectedDay + "T12:00:00Z").getUTCDay() + 6) % 7));
+  const restEnabled = snapshot?.category_details?.find(item => item.id === section)?.rest;
   const buttons = Array.from({length: 7}, (_, i) => {
     const day = addDays(monday, i);
     const counts = snapshot?.week[day];
@@ -144,6 +158,10 @@ function weekView() {
         label.push(name);
       }
       if (marks.childElementCount) button.append(marks);
+    } else if (restEnabled) {
+      button.classList.add("week-rest");
+      button.append(make("span", "Отдых", "week-count"));
+      label.push("Отдых");
     }
     button.setAttribute("aria-label", label.join(", "));
     button.onclick = () => selectDay(day);
@@ -255,16 +273,17 @@ async function sync(redraw = false) {
   }
 }
 
-async function change(mutation, errorId = "list-error") {
+async function change(mutation, errorId = "list-error", route = "tasks", form = byId("editor")) {
   if (!online || busy) return false;
   busy = true;
   byId(errorId).textContent = "";
   renderState();
-  const editor = byId("editor");
-  editor.querySelectorAll("button, input, select").forEach(control => { control.disabled = true; });
+  const controls = [...form.querySelectorAll("button, input, select")].filter(control => !control.disabled);
+  controls.forEach(control => { control.disabled = true; });
   try {
-    await api({mutation});
+    await api({mutation, route});
     await sync();
+    if (route === "tasks") void syncNotices();
     return true;
   } catch (error) {
     byId(errorId).textContent = error instanceof ApiError ? error.message : "Связь прервалась. Проверь список и повтори при необходимости.";
@@ -272,7 +291,7 @@ async function change(mutation, errorId = "list-error") {
     return false;
   } finally {
     busy = false;
-    editor.querySelectorAll("button, input, select").forEach(control => { control.disabled = false; });
+    controls.forEach(control => { control.disabled = false; });
     renderState();
   }
 }
@@ -322,17 +341,215 @@ function addStep(step = {id: crypto.randomUUID(), text: "", done: false}) {
   return input;
 }
 
+function setOptions(id, choices) {
+  byId(id).replaceChildren(...choices.map(([value, label]) => {
+    const option = make("option", label);
+    option.value = value;
+    return option;
+  }));
+}
+
+function selectCategory() {
+  const id = byId("category-choice").value;
+  const item = snapshot.category_details?.find(category => category.id === id);
+  byId("category-name").value = item?.name ?? "";
+  byId("category-color").value = item?.color ?? "blue";
+  byId("category-rest").checked = Boolean(item?.rest);
+  const canRemove = Boolean(id && id !== "day");
+  for (const element of ["category-target", "category-target-label", "remove-category"]) byId(element).hidden = !canRemove;
+  setOptions("category-target", Object.entries(snapshot.categories).filter(([key]) => key !== id));
+  byId("category-error").textContent = "";
+}
+
+function openCategories() {
+  if (!online || busy || !snapshot) return;
+  categoryRequest = crypto.randomUUID();
+  categoryRevision = snapshot.category_revision;
+  setOptions("category-choice", [["", "Новый раздел"], ...Object.entries(snapshot.categories)]);
+  setOptions("category-color", Object.keys(snapshot.category_colors ?? colorLabels).map(key => [key, colorLabels[key] ?? key]));
+  byId("category-choice").value = section;
+  selectCategory();
+  byId("category-editor").showModal();
+}
+
+async function saveCategory(value) {
+  const form = byId("category-editor");
+  if (await change({...value, revision: categoryRevision}, "category-error", "tasks/categories", form)) form.close();
+  else if (snapshot?.category_revision !== categoryRevision) {
+    byId("category-error").textContent = "Разделы изменились. Закрой настройки и открой их заново.";
+  }
+}
+
+function noticeAction(label, handler, disabled = false) {
+  const button = make("button", label, "quiet");
+  button.type = "button";
+  button.disabled = noticeBusy || disabled;
+  button.onclick = handler;
+  return button;
+}
+
+function noticeCard(row) {
+  const card = make("article", undefined, "notice-card");
+  const source = noticeSources[row.source] ?? "Джарвис";
+  const due = row.due_at ? new Date(row.due_at * 1000).toLocaleString("ru-RU",
+    {timeZone: "Asia/Krasnoyarsk", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"}) : "Требует внимания";
+  card.append(make("small", `${source} · ${due}`, "muted"), make("strong", row.title));
+  if (row.action && row.action !== row.title) card.append(make("p", row.action));
+  if (row.body && row.body !== row.action) {
+    const details = make("details");
+    details.append(make("summary", "Подробнее"), make("p", row.body));
+    card.append(details);
+  }
+  const actions = make("div", undefined, "notice-actions");
+  actions.append(noticeAction("✓ Просмотрено", () => acknowledge({ids: [row.id], dismiss: true})));
+  if (row.due) {
+    const snoozed = row.snooze_until * 1000 > Date.now();
+    actions.append(noticeAction(snoozed ? "Отложено" : "Через час",
+      () => acknowledge({ids: [row.id], snooze_seconds: 3600}), snoozed));
+  }
+  if (row.task) actions.append(noticeAction("Выполнено",
+    () => acknowledge({...row.task, operation: "done", done: true}, "tasks")));
+  card.append(actions);
+  return card;
+}
+
+function renderNotices() {
+  const count = notices?.due_count ?? 0;
+  byId("notice-count").hidden = !count;
+  byId("notice-count").textContent = count > 99 ? "99+" : count;
+  byId("show-notices").setAttribute("aria-label", count ? `Уведомления (${count})` : "Уведомления");
+  byId("notice-clear").hidden = !notices?.total;
+  byId("notice-clear").disabled = noticeBusy;
+  const list = byId("notice-list");
+  if (notices?.items.length) {
+    list.replaceChildren(...notices.items.map(noticeCard));
+    if (notices.total > notices.items.length) {
+      list.append(make("p", `Показано ${notices.items.length} из ${notices.total}`, "muted"));
+    }
+  } else {
+    list.replaceChildren(make("p", notices ? "Непросмотренных уведомлений нет." : "Загружаю уведомления…", "muted"));
+  }
+  if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+    navigator.setAppBadge?.(count).catch(() => {});
+  }
+}
+
+async function syncNotices() {
+  if (!connection || noticeLoading || noticeBusy) return;
+  const credentials = connection;
+  noticeLoading = true;
+  try {
+    const next = await api({route: "reminders", credentials});
+    if (connection !== credentials || noticeBusy) return;
+    byId("notices-error").textContent = "";
+    if (notices?.total !== next.total || notices?.due_count !== next.due_count
+        || JSON.stringify(notices?.items) !== JSON.stringify(next.items)) {
+      notices = next;
+      renderNotices();
+    }
+  } catch {
+    if (connection === credentials && byId("notices").open) {
+      byId("notices-error").textContent = "Не удалось обновить уведомления. Проверь связь с ПК.";
+    }
+  } finally { noticeLoading = false; }
+}
+
+async function acknowledge(mutation, route = "reminders/ack") {
+  if (!connection || noticeBusy) return;
+  noticeBusy = true;
+  renderNotices();
+  try {
+    const result = await api({route, mutation});
+    if (result.reminders) notices = result.reminders;
+    if (route === "tasks") void sync();
+  } catch (error) {
+    byId("notices-error").textContent = error instanceof ApiError ? error.message : "Не удалось сохранить. Проверь связь с ПК.";
+  } finally {
+    noticeBusy = false;
+    renderNotices();
+  }
+  void syncNotices();
+}
+
+function updatePushControls() {
+  const button = byId("push-toggle");
+  button.textContent = pushSubscription ? "Отключить на телефоне" : "Включить на телефоне";
+  byId("push-test").hidden = !pushSubscription;
+  button.hidden = !pushKey;
+}
+
+async function preparePush() {
+  const status = byId("push-status");
+  if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+    status.textContent = "Для системных уведомлений на iPhone открой задачник с домашнего экрана.";
+    return;
+  }
+  try {
+    const credentials = connection;
+    const {public_key} = await api({route: "push", credentials});
+    if (credentials !== connection) return;
+    pushRegistration = await navigator.serviceWorker.ready;
+    if (credentials !== connection) return;
+    pushKey = Uint8Array.from(atob(public_key.replace(/-/g, "+").replace(/_/g, "/")), char => char.charCodeAt(0));
+    pushSubscription = await pushRegistration.pushManager.getSubscription();
+    status.textContent = Notification.permission === "denied" ? "Уведомления заблокированы в настройках устройства." : "";
+    updatePushControls();
+  } catch {
+    status.textContent = "Не удалось загрузить настройки системных уведомлений.";
+  }
+}
+
+async function togglePush() {
+  const button = byId("push-toggle");
+  button.disabled = true;
+  const status = byId("push-status");
+  try {
+    if (pushSubscription) {
+      await api({route: "push", mutation: {action: "unsubscribe", endpoint: pushSubscription.endpoint}});
+      await pushSubscription.unsubscribe();
+      pushSubscription = null;
+    } else {
+      const device = await pushRegistration.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: pushKey});
+      const {endpoint, keys} = device.toJSON();
+      try { await api({route: "push", mutation: {action: "subscribe", endpoint, keys}}); }
+      catch (error) { await device.unsubscribe().catch(() => {}); throw error; }
+      pushSubscription = device;
+    }
+    status.textContent = pushSubscription ? "Системные уведомления включены." : "Системные уведомления выключены.";
+  } catch (error) {
+    status.textContent = error instanceof ApiError ? error.message : "Не удалось изменить подписку. Проверь разрешение на уведомления.";
+  } finally {
+    button.disabled = false;
+    updatePushControls();
+  }
+}
+
+function openNotices() {
+  if (!connection || byId("notices").open) return;
+  byId("notices").showModal();
+  renderNotices();
+  void syncNotices();
+  void preparePush();
+}
+
 function disconnect() {
   ++loadVersion;
   connection = null;
   snapshot = null;
   cachedDays = [];
+  notices = null;
+  pushKey = null;
+  pushSubscription = null;
   online = false;
   loading = false;
   byId("key").value = "";
   byId("status").textContent = "Задачник Джарвиса";
   byId("tasks").replaceChildren();
   byId("editor").close();
+  byId("category-editor").close();
+  byId("notices").close();
+  renderNotices();
+  updatePushControls();
   try { localStorage.removeItem(keyName); localStorage.removeItem(cacheName); }
   catch { /* No locally persisted session to clear. */ }
   renderState();
@@ -361,6 +578,8 @@ byId("connect-form").onsubmit = async event => {
     input.value = "";
     online = true;
     render();
+    void syncNotices();
+    if (new URLSearchParams(location.search).get("view") === "notices") openNotices();
   } catch (error) {
     errorText.textContent = error instanceof ApiError ? error.message : "Нет связи с ПК. Проверь, что Джарвис запущен.";
   } finally { button.disabled = false; }
@@ -372,7 +591,61 @@ byId("today").onclick = () => selectDay(today(), true);
 byId("day").onchange = event => selectDay(event.target.value);
 byId("add-task").onclick = () => openEditor();
 byId("add-step").onclick = () => addStep()?.focus();
-byId("disconnect").onclick = () => { if (!busy) disconnect(); };
+byId("disconnect").onclick = async () => {
+  if (busy || noticeBusy) return;
+  const registration = await navigator.serviceWorker?.getRegistration().catch(() => null);
+  const device = await registration?.pushManager?.getSubscription().catch(() => null);
+  if (device) {
+    await device.unsubscribe().catch(() => false);
+    void api({route: "push", mutation: {action: "unsubscribe", endpoint: device.endpoint}}).catch(() => {});
+  }
+  disconnect();
+};
+byId("reload").onclick = async () => {
+  byId("reload").disabled = true;
+  try {
+    const registration = await navigator.serviceWorker?.getRegistration();
+    await registration?.update();
+  } catch { /* The cached app can still be opened while the PC or internet is offline. */ }
+  location.reload();
+};
+byId("show-notices").onclick = openNotices;
+byId("close-notices").onclick = () => byId("notices").close();
+byId("notice-clear").onclick = () => acknowledge({dismiss: true, all_current: true});
+byId("push-toggle").onclick = togglePush;
+byId("push-test").onclick = async () => {
+  const button = byId("push-test");
+  button.disabled = true;
+  try {
+    await api({route: "push", mutation: {action: "test", endpoint: pushSubscription.endpoint}});
+    byId("push-status").textContent = "Пробное уведомление отправлено.";
+  } catch (error) {
+    if (error.status === 410) {
+      await pushSubscription?.unsubscribe().catch(() => {});
+      pushSubscription = null;
+      updatePushControls();
+    }
+    byId("push-status").textContent = error instanceof ApiError ? error.message : "Не удалось отправить пробное уведомление.";
+  } finally { button.disabled = false; }
+};
+byId("show-categories").onclick = openCategories;
+byId("close-categories").onclick = () => byId("category-editor").close();
+byId("category-editor").oncancel = event => { if (busy) event.preventDefault(); };
+byId("category-choice").onchange = selectCategory;
+byId("category-form").onsubmit = event => {
+  event.preventDefault();
+  const id = byId("category-choice").value;
+  const identity = id ? {operation: "update", id} : {operation: "create", request_id: categoryRequest};
+  void saveCategory({...identity, name: byId("category-name").value.trim(),
+    color: byId("category-color").value, rest: byId("category-rest").checked});
+};
+byId("remove-category").onclick = () => {
+  const id = byId("category-choice").value;
+  const target = byId("category-target").value;
+  if (id && target && confirm(`Удалить раздел «${snapshot.categories[id]}» и перенести его задачи в «${snapshot.categories[target]}»?`)) {
+    void saveCategory({operation: "delete", id, target});
+  }
+};
 byId("close-editor").onclick = () => byId("editor").close();
 byId("editor").oncancel = event => { if (busy) event.preventDefault(); };
 byId("remove-task").onclick = async () => {
@@ -395,21 +668,29 @@ byId("task-form").onsubmit = async event => {
 };
 
 const refresh = () => {
-  if (connection && !document.hidden && !loading && !busy && !byId("editor").open) void sync();
+  if (!connection || document.hidden) return;
+  void syncNotices();
+  if (!loading && !busy && !byId("editor").open && !byId("category-editor").open) void sync();
 };
 document.addEventListener("visibilitychange", refresh);
 window.addEventListener("online", refresh);
 window.addEventListener("focus", refresh);
 setInterval(refresh, 60000);
+setInterval(() => { if (!document.hidden) void syncNotices(); }, 15000);
 
 if (!isPlannerSite) {
   byId("status").textContent = "Открой задачник по адресу tasks.voxforma.ru.";
 } else if (connection) {
   restoreDay(selectedDay);
   void sync(true);
+  void syncNotices();
+  if (new URLSearchParams(location.search).get("view") === "notices") openNotices();
 } else {
   renderState();
 }
 if (isPlannerSite && "serviceWorker" in navigator) {
-  navigator.serviceWorker.register("./sw.js").catch(() => {});
+  navigator.serviceWorker.register("./sw.js", {updateViaCache: "none"}).catch(() => {});
+  navigator.serviceWorker.addEventListener("message", event => {
+    if (event.data === "open-notices") openNotices();
+  });
 }

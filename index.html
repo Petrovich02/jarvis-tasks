@@ -20,7 +20,13 @@
         <h1>Мой день</h1>
         <p id="status" role="status">Задачник Джарвиса</p>
       </div>
-      <button id="disconnect" class="quiet" hidden>Отключить</button>
+      <div class="top-actions">
+        <button id="reload" class="quiet icon-button" aria-label="Обновить" title="Обновить">↻</button>
+        <button id="show-notices" class="quiet icon-button" aria-label="Уведомления" title="Уведомления" hidden>
+          <span aria-hidden="true">🔔</span><span id="notice-count" class="notice-count" hidden></span>
+        </button>
+        <button id="disconnect" class="quiet" hidden>Отключить</button>
+      </div>
     </header>
 
     <section id="connection" class="panel" hidden aria-labelledby="connection-title">
@@ -41,6 +47,10 @@
         <button id="today" class="quiet">Сегодня</button>
       </nav>
       <nav id="week" aria-label="Дни недели"></nav>
+      <div class="sections-heading">
+        <h2>Разделы</h2>
+        <button id="show-categories" class="quiet" aria-label="Настроить разделы">Настроить</button>
+      </div>
       <nav id="sections" aria-label="Разделы задач"></nav>
       <div class="list-header">
         <h2 id="list-heading">Задачи</h2>
@@ -49,6 +59,44 @@
       <p id="list-error" class="error" role="alert"></p>
       <div id="tasks"></div>
     </section>
+
+    <dialog id="notices" aria-labelledby="notices-title">
+      <div class="list-header">
+        <h2 id="notices-title">Уведомления</h2>
+        <button type="button" id="close-notices" class="quiet icon-button" aria-label="Закрыть уведомления">×</button>
+      </div>
+      <div class="notice-toolbar">
+        <button id="push-toggle" class="quiet" hidden>Включить на телефоне</button>
+        <button id="push-test" class="quiet" hidden>Проверить</button>
+        <button id="notice-clear" class="quiet" hidden>✓ Все просмотрены</button>
+      </div>
+      <p id="push-status" class="muted" role="status"></p>
+      <p id="notices-error" class="error" role="alert"></p>
+      <div id="notice-list"></div>
+    </dialog>
+
+    <dialog id="category-editor" aria-labelledby="category-editor-title">
+      <form id="category-form">
+        <div class="list-header">
+          <h2 id="category-editor-title">Разделы задачника</h2>
+          <button type="button" id="close-categories" class="quiet icon-button" aria-label="Закрыть разделы">×</button>
+        </div>
+        <label for="category-choice">Раздел</label>
+        <select id="category-choice"></select>
+        <label for="category-name">Название</label>
+        <input id="category-name" required maxlength="40">
+        <label for="category-color">Цвет</label>
+        <select id="category-color" required></select>
+        <label class="step-line"><input id="category-rest" type="checkbox"> Показывать дни без задач как отдых</label>
+        <label for="category-target" id="category-target-label" hidden>Перенести задачи при удалении в</label>
+        <select id="category-target" hidden></select>
+        <p id="category-error" class="error" role="alert"></p>
+        <div class="editor-actions">
+          <button id="remove-category" class="danger" type="button" hidden>Удалить раздел</button>
+          <button class="primary">Сохранить</button>
+        </div>
+      </form>
+    </dialog>
 
     <dialog id="editor" aria-labelledby="editor-title">
       <form id="task-form">

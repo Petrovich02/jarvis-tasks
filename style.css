@@ -18,6 +18,12 @@ h2 { font-size: 1.2rem; }
 h3 { font-size: 1rem; }
 .top, .list-header, .date-controls, .editor-actions { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
 .top { margin-bottom: 1.3rem; }
+.top-actions { display: flex; align-items: center; gap: .35rem; flex-shrink: 0; }
+.icon-button { min-width: 44px; position: relative; font-size: 1.1rem; }
+.notice-count {
+  position: absolute; top: -.25rem; right: -.23rem; min-width: 1.15rem; padding: .03rem .23rem;
+  border-radius: 1rem; background: #94c6ff; color: #152339; font-size: .65rem; font-weight: 700;
+}
 #status, .muted { color: var(--muted); font-size: .9rem; }
 button, input, select { font: inherit; color: inherit; min-height: 44px; border-radius: .65rem; }
 button { cursor: pointer; border: 1px solid transparent; padding: .5rem .7rem; background: var(--card); }
@@ -48,8 +54,11 @@ form { display: grid; gap: .55rem; }
 .week-marks { display: flex; flex-wrap: wrap; justify-content: center; gap: .16rem; margin: .15rem .1rem .05rem; }
 .section-mark { display: inline-block; flex: none; width: .46rem; height: .46rem; border-radius: 50%; background: var(--section-color); }
 .week-marks .section-mark { width: .28rem; height: .28rem; }
-#sections { display: flex; flex-wrap: wrap; gap: .4rem; padding: .7rem .15rem; }
-#sections button { display: flex; align-items: center; gap: .4rem; max-width: 100%; border-color: var(--line); }
+.sections-heading { display: flex; align-items: center; justify-content: space-between; margin-top: .7rem; }
+.sections-heading h2 { color: var(--muted); font-size: .9rem; }
+#show-categories { background: transparent; border-color: transparent; color: var(--muted); font-size: .82rem; }
+#sections { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4rem; margin: .1rem 0 .95rem; }
+#sections button { display: flex; align-items: center; gap: .45rem; min-width: 0; border-color: var(--line); padding-inline: .65rem; }
 #sections button[aria-pressed=true] {
   background: #233c59;
   background: color-mix(in srgb, var(--section-color) 17%, var(--card));
@@ -74,3 +83,19 @@ dialog::backdrop { background: #03080ed1; }
 .times label { min-width: 0; }
 .editor-actions { justify-content: flex-end; margin-top: .5rem; }
 #steps { display: grid; gap: .45rem; }
+.notice-toolbar, .notice-actions { display: flex; flex-wrap: wrap; gap: .4rem; }
+.notice-toolbar button, .notice-actions button { font-size: .85rem; }
+#push-status:not(:empty) { margin: .65rem 0; }
+#notice-list { display: grid; gap: .6rem; margin-top: .75rem; }
+.notice-card { border: 1px solid var(--line); border-radius: .8rem; padding: .7rem; overflow-wrap: anywhere; }
+.notice-card > * + * { margin-top: .35rem; }
+.notice-card strong { display: block; }
+.notice-card details { margin-left: 0; }
+.notice-card p { white-space: pre-line; }
+#week .week-rest .week-count { color: #d89ba1; }
+#week .week-rest { border-color: #a86770; }
+@media (max-width: 380px) {
+  h1 { font-size: 1.65rem; }
+  #disconnect { padding-inline: .35rem; font-size: .8rem; }
+  #sections button { padding-inline: .45rem; font-size: .9rem; }
+}
