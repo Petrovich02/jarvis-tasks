@@ -1,6 +1,6 @@
 "use strict";
 
-const cacheName = "jarvis-tasks-shell-v5";
+const cacheName = "jarvis-tasks-shell-v6";
 const files = ["./", "./index.html", "./style.css", "./app.js", "./manifest.webmanifest", "./icon.png"];
 const assetUrls = new Set(files.map(path => new URL(path, self.registration.scope).href));
 

@@ -58,8 +58,15 @@ form { display: grid; gap: .55rem; }
 .sections-actions { display: flex; align-items: center; gap: .35rem; }
 .sections-actions button { background: transparent; border-color: transparent; color: var(--muted); font-size: .82rem; }
 .sections-heading h2 { color: var(--muted); font-size: .9rem; }
-#sections { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4rem; margin: .1rem 0 .95rem; }
-#sections button { display: flex; align-items: center; gap: .45rem; min-width: 0; border-color: var(--line); padding-inline: .65rem; }
+#sections {
+  display: flex; gap: .4rem; margin: 0 0 .55rem; padding: .25rem;
+  overflow-x: auto; overflow-y: hidden; overscroll-behavior-inline: contain; scrollbar-width: none;
+}
+#sections::-webkit-scrollbar { display: none; }
+#sections button {
+  display: flex; flex: none; align-items: center; gap: .45rem; min-width: 0; max-width: 90%;
+  border-color: var(--line); border-radius: 999px; padding-inline: .8rem;
+}
 #sections button[aria-pressed=true] {
   background: #233c59;
   background: color-mix(in srgb, var(--section-color) 17%, var(--card));
@@ -114,5 +121,5 @@ dialog::backdrop { background: #03080ed1; }
 @media (max-width: 380px) {
   h1 { font-size: 1.65rem; }
   #disconnect { padding-inline: .35rem; font-size: .8rem; }
-  #sections button { padding-inline: .45rem; font-size: .9rem; }
+  #sections button { padding-inline: .65rem; font-size: .9rem; }
 }

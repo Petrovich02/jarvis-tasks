@@ -47,6 +47,7 @@ let cachedDays = connection ? readStorage(cacheName, []) : [];
 if (!Array.isArray(cachedDays)) cachedDays = [];
 let selectedDay = today();
 let section = "";
+let renderedSections = "";
 let snapshot = null;
 let cacheTime = 0;
 let online = false;
@@ -175,19 +176,34 @@ function weekView() {
   byId("week").replaceChildren(...buttons);
 }
 
+function renderSections() {
+  const strip = byId("sections");
+  const choices = [["", "Все"], ...Object.entries(snapshot?.categories ?? {})]
+    .map(([key, name]) => [key, name, sectionColor(key)]);
+  const signature = JSON.stringify(choices);
+  if (renderedSections !== signature) {
+    const position = strip.scrollLeft;
+    strip.replaceChildren(...choices.map(([key, name, color]) => {
+      const button = make("button");
+      button.dataset.section = key;
+      button.style.setProperty("--section-color", color);
+      button.append(sectionMark(), make("span", name, "section-name"));
+      button.onclick = () => { section = key; render(); };
+      return button;
+    }));
+    strip.scrollLeft = position;
+    renderedSections = signature;
+  }
+  for (const button of strip.children) {
+    button.setAttribute("aria-pressed", String(button.dataset.section === section));
+  }
+}
+
 function render() {
   if (!connection) return renderState();
   if (section && snapshot && !snapshot.categories[section]) section = "";
   weekView();
-  const choices = [["", "Все"], ...Object.entries(snapshot?.categories ?? {})];
-  byId("sections").replaceChildren(...choices.map(([key, name]) => {
-    const button = make("button");
-    button.style.setProperty("--section-color", sectionColor(key));
-    button.append(sectionMark(), make("span", name, "section-name"));
-    button.setAttribute("aria-pressed", String(key === section));
-    button.onclick = () => { section = key; render(); byId("sections").querySelector('[aria-pressed="true"]').focus(); };
-    return button;
-  }));
+  renderSections();
   const rows = snapshot?.items.filter(row => !section || row.category === section) ?? [];
   byId("list-heading").textContent = rows.length ? `Задачи · ${rows.filter(row => row.done).length}/${rows.length}` : "Задачи";
   const empty = loading && !snapshot ? "Загружаю задачи…" : !snapshot ? "На эту дату нет сохранённой копии." : "На эту дату задач нет.";
