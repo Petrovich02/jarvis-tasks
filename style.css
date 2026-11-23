@@ -79,8 +79,17 @@ summary { cursor: pointer; padding: .45rem 0; color: var(--accent); }
 .step-line span { overflow-wrap: anywhere; }
 dialog { width: min(calc(100% - 1.5rem), 32rem); max-height: 90dvh; border: 1px solid var(--line); border-radius: 1rem; padding: 1rem; background: var(--card); color: inherit; }
 dialog::backdrop { background: #03080ed1; }
-.times { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; }
-.times label { min-width: 0; }
+#task-form { grid-template-columns: minmax(0, 1fr); }
+#task-form input:is([type=date], [type=time]) {
+  display: block;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+}
+#task-form input::-webkit-date-and-time-value { text-align: start; }
+.times { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr)); gap: .75rem 1rem; }
+.times label { display: grid; grid-template-columns: minmax(0, 1fr); gap: .35rem; }
 .editor-actions { justify-content: flex-end; margin-top: .5rem; }
 #steps { display: grid; gap: .45rem; }
 .notice-toolbar, .notice-actions { display: flex; flex-wrap: wrap; gap: .4rem; }
