@@ -49,7 +49,10 @@
       <nav id="week" aria-label="Дни недели"></nav>
       <div class="sections-heading">
         <h2>Разделы</h2>
-        <button id="show-categories" class="quiet" aria-label="Настроить разделы">Настроить</button>
+        <div class="sections-actions">
+          <button id="show-workflows" class="quiet">Команды</button>
+          <button id="show-categories" class="quiet" aria-label="Настроить разделы">Настроить</button>
+        </div>
       </div>
       <nav id="sections" aria-label="Разделы задач"></nav>
       <div class="list-header">
@@ -59,6 +62,25 @@
       <p id="list-error" class="error" role="alert"></p>
       <div id="tasks"></div>
     </section>
+
+    <dialog id="workflows" aria-labelledby="workflow-title">
+      <div class="list-header">
+        <h2 id="workflow-title">Команды на ПК</h2>
+        <button type="button" id="close-workflows" class="quiet icon-button" aria-label="Закрыть команды">×</button>
+      </div>
+      <div class="workflow-actions">
+        <div id="workflow-voice" class="workflow-action" hidden>
+          <button id="run-voice" type="button" class="primary">Смонтировать озвучку новостей</button>
+          <label for="workflow-link" class="muted">Ссылка с Яндекс Диска (если нужна конкретная)</label>
+          <input id="workflow-link" type="url" maxlength="500" autocapitalize="off" autocomplete="off" spellcheck="false"
+            placeholder="По умолчанию — ссылка из Telegram">
+        </div>
+        <button type="button" class="quiet" id="run-collect" hidden>Собрать новости</button>
+      </div>
+      <p id="workflow-status" class="muted" role="status"></p>
+      <p id="workflow-error" class="error" role="alert"></p>
+      <ul id="workflow-runs" aria-label="Последние запуски"></ul>
+    </dialog>
 
     <dialog id="notices" aria-labelledby="notices-title">
       <div class="list-header">

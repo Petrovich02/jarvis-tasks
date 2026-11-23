@@ -63,6 +63,10 @@ let noticeBusy = false;
 let pushRegistration = null;
 let pushSubscription = null;
 let pushKey = null;
+let workflowSnapshot = null;
+let workflowLoading = false;
+let workflowSubmitting = false;
+let workflowRequest = null;
 const expandedTasks = new Set();
 const noticeSources = {personal: "Личные задачи", editing: "JCenter · заказы на монтаж", crm: "CRM", mailing: "Рассылка"};
 const colorLabels = {blue: "Голубой", green: "Зелёный", purple: "Сиреневый", peach: "Персиковый",
@@ -116,6 +120,7 @@ function renderState() {
   byId("day").value = selectedDay;
   byId("add-task").disabled = !online || busy || !snapshot;
   byId("show-categories").disabled = !online || busy || !snapshot;
+  byId("show-workflows").disabled = !online;
   byId("tasks").querySelectorAll("input, button").forEach(control => { control.disabled = !online || busy; });
 }
 
@@ -532,12 +537,74 @@ function openNotices() {
   void preparePush();
 }
 
+function renderWorkflows() {
+  const actions = new Map(workflowSnapshot?.actions.map(action => [action.id, action.label]));
+  const runs = workflowSnapshot?.runs ?? [];
+  const active = action => workflowSubmitting || runs.some(run => run.action === action && ["queued", "running"].includes(run.status));
+  byId("workflow-voice").hidden = !actions.has("news_voice");
+  byId("run-collect").hidden = !actions.has("news_collect");
+  byId("run-voice").disabled = active("news_voice");
+  byId("run-collect").disabled = active("news_collect");
+  byId("workflow-link").disabled = active("news_voice");
+  byId("workflow-status").textContent = !workflowSnapshot ? "Проверяю связь с ПК…"
+    : !actions.size ? "Команды на ПК ещё не настроены." : "";
+  byId("workflow-runs").replaceChildren(...runs.map(run => {
+    const item = make("li");
+    item.append(make("strong", actions.get(run.action)), make("p", run.detail,
+      run.status === "failed" || run.status === "interrupted" ? "error" : "muted"));
+    return item;
+  }));
+}
+
+async function syncWorkflows() {
+  if (!connection || workflowLoading || workflowSubmitting || !byId("workflows").open) return;
+  const credentials = connection;
+  workflowLoading = true;
+  try {
+    const next = await api({route: "workflows", credentials});
+    if (connection !== credentials || workflowSubmitting) return;
+    if (JSON.stringify(workflowSnapshot) !== JSON.stringify(next)) {
+      workflowSnapshot = next;
+      renderWorkflows();
+    }
+  } catch {
+    if (connection === credentials) byId("workflow-status").textContent = "ПК недоступен. Попробуй открыть команды ещё раз.";
+  } finally { workflowLoading = false; }
+}
+
+async function runWorkflow(action) {
+  if (!connection || workflowSubmitting) return;
+  const credentials = connection;
+  const link = action === "news_voice" ? byId("workflow-link").value.trim() : "";
+  if (workflowRequest?.action !== action || workflowRequest?.link !== link) {
+    workflowRequest = {action, link, request_id: crypto.randomUUID()};
+  }
+  workflowSubmitting = true;
+  byId("workflow-error").textContent = "";
+  renderWorkflows();
+  try {
+    const next = await api({route: "workflows", mutation: workflowRequest, credentials});
+    if (connection !== credentials) return;
+    workflowSnapshot = next;
+    workflowRequest = null;
+    if (link) byId("workflow-link").value = "";
+  } catch (error) {
+    if (connection === credentials) byId("workflow-error").textContent = error instanceof ApiError
+      ? error.message : "ПК не подтвердил получение команды. Можно повторить запрос.";
+  } finally {
+    workflowSubmitting = false;
+    renderWorkflows();
+  }
+}
+
 function disconnect() {
   ++loadVersion;
   connection = null;
   snapshot = null;
   cachedDays = [];
   notices = null;
+  workflowSnapshot = null;
+  workflowRequest = null;
   pushKey = null;
   pushSubscription = null;
   online = false;
@@ -548,6 +615,7 @@ function disconnect() {
   byId("editor").close();
   byId("category-editor").close();
   byId("notices").close();
+  byId("workflows").close();
   renderNotices();
   updatePushControls();
   try { localStorage.removeItem(keyName); localStorage.removeItem(cacheName); }
@@ -629,6 +697,15 @@ byId("push-test").onclick = async () => {
   } finally { button.disabled = false; }
 };
 byId("show-categories").onclick = openCategories;
+byId("show-workflows").onclick = () => {
+  byId("workflows").showModal();
+  byId("workflow-error").textContent = "";
+  renderWorkflows();
+  void syncWorkflows();
+};
+byId("close-workflows").onclick = () => byId("workflows").close();
+byId("run-voice").onclick = () => runWorkflow("news_voice");
+byId("run-collect").onclick = () => runWorkflow("news_collect");
 byId("close-categories").onclick = () => byId("category-editor").close();
 byId("category-editor").oncancel = event => { if (busy) event.preventDefault(); };
 byId("category-choice").onchange = selectCategory;
@@ -670,6 +747,7 @@ byId("task-form").onsubmit = async event => {
 const refresh = () => {
   if (!connection || document.hidden) return;
   void syncNotices();
+  void syncWorkflows();
   if (!loading && !busy && !byId("editor").open && !byId("category-editor").open) void sync();
 };
 document.addEventListener("visibilitychange", refresh);
@@ -677,6 +755,7 @@ window.addEventListener("online", refresh);
 window.addEventListener("focus", refresh);
 setInterval(refresh, 60000);
 setInterval(() => { if (!document.hidden) void syncNotices(); }, 15000);
+setInterval(() => { if (!document.hidden) void syncWorkflows(); }, 4000);
 
 if (!isPlannerSite) {
   byId("status").textContent = "Открой задачник по адресу tasks.voxforma.ru.";

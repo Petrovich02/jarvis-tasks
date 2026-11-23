@@ -55,8 +55,9 @@ form { display: grid; gap: .55rem; }
 .section-mark { display: inline-block; flex: none; width: .46rem; height: .46rem; border-radius: 50%; background: var(--section-color); }
 .week-marks .section-mark { width: .28rem; height: .28rem; }
 .sections-heading { display: flex; align-items: center; justify-content: space-between; margin-top: .7rem; }
+.sections-actions { display: flex; align-items: center; gap: .35rem; }
+.sections-actions button { background: transparent; border-color: transparent; color: var(--muted); font-size: .82rem; }
 .sections-heading h2 { color: var(--muted); font-size: .9rem; }
-#show-categories { background: transparent; border-color: transparent; color: var(--muted); font-size: .82rem; }
 #sections { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4rem; margin: .1rem 0 .95rem; }
 #sections button { display: flex; align-items: center; gap: .45rem; min-width: 0; border-color: var(--line); padding-inline: .65rem; }
 #sections button[aria-pressed=true] {
@@ -101,6 +102,13 @@ dialog::backdrop { background: #03080ed1; }
 .notice-card strong { display: block; }
 .notice-card details { margin-left: 0; }
 .notice-card p { white-space: pre-line; }
+.workflow-actions, .workflow-action { display: grid; gap: .55rem; }
+.workflow-action { margin-bottom: .25rem; }
+.workflow-action button, #run-collect { text-align: start; }
+#workflow-status:not(:empty) { margin-top: .75rem; }
+#workflow-runs { margin: .75rem 0 0; padding: 0; list-style: none; }
+#workflow-runs li { padding: .6rem 0; border-top: 1px solid var(--line); }
+#workflow-runs strong { display: block; }
 #week .week-rest .week-count { color: #d89ba1; }
 #week .week-rest { border-color: #a86770; }
 @media (max-width: 380px) {
