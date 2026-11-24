@@ -69,7 +69,8 @@ let workflowLoading = false;
 let workflowSubmitting = false;
 let workflowRequest = null;
 const expandedTasks = new Set();
-const noticeSources = {personal: "Личные задачи", editing: "JCenter · заказы на монтаж", crm: "CRM", mailing: "Рассылка"};
+const noticeSources = {personal: "Личные задачи", editing: "JCenter · заказы на монтаж", crm: "CRM", mailing: "Рассылка",
+  editing_followup: "Мои заказы — монтаж", cg_followup: "Мои заказы CG"};
 const colorLabels = {blue: "Голубой", green: "Зелёный", purple: "Сиреневый", peach: "Персиковый",
   pink: "Розовый", teal: "Бирюзовый", yellow: "Жёлтый"};
 

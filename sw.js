@@ -1,6 +1,6 @@
 "use strict";
 
-const cacheName = "jarvis-tasks-shell-v6";
+const cacheName = "jarvis-tasks-shell-v7";
 const files = ["./", "./index.html", "./style.css", "./app.js", "./manifest.webmanifest", "./icon.png"];
 const assetUrls = new Set(files.map(path => new URL(path, self.registration.scope).href));
 
@@ -43,6 +43,8 @@ self.addEventListener("push", event => {
   catch { data = null; }
   const body = data?.test ? "Пробное уведомление Джарвиса."
     : data?.count > 1 ? `Новые напоминания: ${data.count}. Открой задачник, чтобы посмотреть.`
+    : data?.followup === "editing_followup" ? "Пора написать по заказу на монтаж."
+    : data?.followup === "cg_followup" ? "Пора написать по заказу CG."
     : "Новое напоминание. Открой задачник, чтобы посмотреть.";
   event.waitUntil(self.registration.showNotification("Джарвис", {
     body, icon: new URL("icon.png", self.registration.scope).href,
