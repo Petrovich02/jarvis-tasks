@@ -65,6 +65,7 @@ let pushRegistration = null;
 let pushSubscription = null;
 let pushKey = null;
 let workflowSnapshot = null;
+let workflowAvailable = null;
 let workflowLoading = false;
 let workflowSubmitting = false;
 let workflowRequest = null;
@@ -118,11 +119,14 @@ function renderState() {
   if (!connection) return;
   const last = cacheTime ? new Date(cacheTime).toLocaleTimeString("ru-RU", {hour: "2-digit", minute: "2-digit"}) : "";
   byId("status").textContent = online ? "Связь с Джарвисом" : loading ? "Подключаюсь…" :
-    last ? `ПК недоступен · копия на ${last}` : "ПК недоступен";
+    last ? `Нет связи с Джарвисом · копия на ${last}` : "Нет связи с Джарвисом";
   byId("day").value = selectedDay;
   byId("add-task").disabled = !online || busy || !snapshot;
-  byId("show-categories").disabled = !online || busy || !snapshot;
-  byId("show-workflows").disabled = !online;
+  byId("show-categories").disabled = busy;
+  byId("category-offline").hidden = online;
+  byId("category-fields").hidden = !snapshot;
+  byId("category-fields").disabled = !online || !snapshot;
+  if (byId("category-editor").open && snapshot && !categoryRequest) loadCategoryOptions();
   byId("tasks").querySelectorAll("input, button").forEach(control => { control.disabled = !online || busy; });
 }
 
@@ -383,15 +387,22 @@ function selectCategory() {
   byId("category-error").textContent = "";
 }
 
-function openCategories() {
-  if (!online || busy || !snapshot) return;
+function loadCategoryOptions() {
   categoryRequest = crypto.randomUUID();
   categoryRevision = snapshot.category_revision;
   setOptions("category-choice", [["", "Новый раздел"], ...Object.entries(snapshot.categories)]);
   setOptions("category-color", Object.keys(snapshot.category_colors ?? colorLabels).map(key => [key, colorLabels[key] ?? key]));
   byId("category-choice").value = section;
   selectCategory();
+}
+
+function openCategories() {
+  if (busy) return;
+  categoryRequest = "";
+  byId("category-error").textContent = "";
   byId("category-editor").showModal();
+  renderState();
+  if (!online && !loading) void sync();
 }
 
 async function saveCategory(value) {
@@ -557,13 +568,15 @@ function openNotices() {
 function renderWorkflows() {
   const actions = new Map(workflowSnapshot?.actions.map(action => [action.id, action.label]));
   const runs = workflowSnapshot?.runs ?? [];
-  const active = action => workflowSubmitting || runs.some(run => run.action === action && ["queued", "running"].includes(run.status));
+  const disabled = action => !workflowAvailable || workflowSubmitting ||
+    runs.some(run => run.action === action && ["queued", "running"].includes(run.status));
   byId("workflow-voice").hidden = !actions.has("news_voice");
   byId("run-collect").hidden = !actions.has("news_collect");
-  byId("run-voice").disabled = active("news_voice");
-  byId("run-collect").disabled = active("news_collect");
-  byId("workflow-link").disabled = active("news_voice");
-  byId("workflow-status").textContent = !workflowSnapshot ? "Проверяю связь с ПК…"
+  byId("run-voice").disabled = disabled("news_voice");
+  byId("run-collect").disabled = disabled("news_collect");
+  byId("workflow-link").disabled = disabled("news_voice");
+  byId("workflow-status").textContent = workflowAvailable === false ? "Нет связи с Джарвисом. Проверяю подключение…"
+    : workflowAvailable === null ? "Проверяю связь с ПК…"
     : !actions.size ? "Команды на ПК ещё не настроены." : "";
   byId("workflow-runs").replaceChildren(...runs.map(run => {
     const item = make("li");
@@ -580,17 +593,21 @@ async function syncWorkflows() {
   try {
     const next = await api({route: "workflows", credentials});
     if (connection !== credentials || workflowSubmitting) return;
-    if (JSON.stringify(workflowSnapshot) !== JSON.stringify(next)) {
+    if (!workflowAvailable || JSON.stringify(workflowSnapshot) !== JSON.stringify(next)) {
+      workflowAvailable = true;
       workflowSnapshot = next;
       renderWorkflows();
     }
   } catch {
-    if (connection === credentials) byId("workflow-status").textContent = "ПК недоступен. Попробуй открыть команды ещё раз.";
+    if (connection === credentials) {
+      workflowAvailable = false;
+      renderWorkflows();
+    }
   } finally { workflowLoading = false; }
 }
 
 async function runWorkflow(action) {
-  if (!connection || workflowSubmitting) return;
+  if (!connection || !workflowAvailable || workflowSubmitting) return;
   const credentials = connection;
   const link = action === "news_voice" ? byId("workflow-link").value.trim() : "";
   if (workflowRequest?.action !== action || workflowRequest?.link !== link) {
@@ -606,8 +623,11 @@ async function runWorkflow(action) {
     workflowRequest = null;
     if (link) byId("workflow-link").value = "";
   } catch (error) {
-    if (connection === credentials) byId("workflow-error").textContent = error instanceof ApiError
-      ? error.message : "ПК не подтвердил получение команды. Можно повторить запрос.";
+    if (connection === credentials) {
+      if (!(error instanceof ApiError)) workflowAvailable = false;
+      byId("workflow-error").textContent = error instanceof ApiError
+        ? error.message : "ПК не подтвердил получение команды. Можно повторить запрос.";
+    }
   } finally {
     workflowSubmitting = false;
     renderWorkflows();
@@ -621,6 +641,7 @@ function disconnect() {
   cachedDays = [];
   notices = null;
   workflowSnapshot = null;
+  workflowAvailable = null;
   workflowRequest = null;
   pushKey = null;
   pushSubscription = null;
@@ -716,6 +737,7 @@ byId("push-test").onclick = async () => {
 byId("show-categories").onclick = openCategories;
 byId("show-workflows").onclick = () => {
   byId("workflows").showModal();
+  workflowAvailable = null;
   byId("workflow-error").textContent = "";
   renderWorkflows();
   void syncWorkflows();
@@ -765,7 +787,7 @@ const refresh = () => {
   if (!connection || document.hidden) return;
   void syncNotices();
   void syncWorkflows();
-  if (!loading && !busy && !byId("editor").open && !byId("category-editor").open) void sync();
+  if (!loading && !busy && !byId("editor").open) void sync();
 };
 document.addEventListener("visibilitychange", refresh);
 window.addEventListener("online", refresh);

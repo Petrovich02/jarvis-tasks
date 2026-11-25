@@ -35,7 +35,8 @@ button:disabled { cursor: default; opacity: .55; }
 input:not([type=checkbox]), select { width: 100%; background: #121d2d; border: 1px solid var(--line); padding: .55rem .65rem; }
 input[type=checkbox] { min-height: 0; width: 1.35rem; height: 1.35rem; accent-color: #9dccff; margin: 0; flex: none; }
 .panel { background: var(--card); padding: 1rem; border: 1px solid var(--line); border-radius: .9rem; }
-form { display: grid; gap: .55rem; }
+form, #category-fields { display: grid; gap: .55rem; }
+#category-fields { min-width: 0; margin: 0; padding: 0; border: 0; }
 .panel form { margin-top: .8rem; }
 .panel .primary { justify-self: start; }
 .error { color: #ffc0b8; margin-top: .35rem; }

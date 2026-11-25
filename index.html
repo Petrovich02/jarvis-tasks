@@ -10,8 +10,8 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icon.png">
   <link rel="icon" href="icon.png">
-  <link rel="stylesheet" href="style.css">
-  <script src="app.js" defer></script>
+  <link rel="stylesheet" href="style.css?v=8">
+  <script src="app.js?v=8" defer></script>
 </head>
 <body>
   <main>
@@ -103,20 +103,23 @@
           <h2 id="category-editor-title">Разделы задачника</h2>
           <button type="button" id="close-categories" class="quiet icon-button" aria-label="Закрыть разделы">×</button>
         </div>
-        <label for="category-choice">Раздел</label>
-        <select id="category-choice"></select>
-        <label for="category-name">Название</label>
-        <input id="category-name" required maxlength="40">
-        <label for="category-color">Цвет</label>
-        <select id="category-color" required></select>
-        <label class="step-line"><input id="category-rest" type="checkbox"> Показывать дни без задач как отдых</label>
-        <label for="category-target" id="category-target-label" hidden>Перенести задачи при удалении в</label>
-        <select id="category-target" hidden></select>
-        <p id="category-error" class="error" role="alert"></p>
-        <div class="editor-actions">
-          <button id="remove-category" class="danger" type="button" hidden>Удалить раздел</button>
-          <button class="primary">Сохранить</button>
-        </div>
+        <p id="category-offline" class="muted" role="status" hidden>Изменения доступны после подключения к Джарвису.</p>
+        <fieldset id="category-fields" hidden disabled>
+          <label for="category-choice">Раздел</label>
+          <select id="category-choice"></select>
+          <label for="category-name">Название</label>
+          <input id="category-name" required maxlength="40">
+          <label for="category-color">Цвет</label>
+          <select id="category-color" required></select>
+          <label class="step-line"><input id="category-rest" type="checkbox"> Показывать дни без задач как отдых</label>
+          <label for="category-target" id="category-target-label" hidden>Перенести задачи при удалении в</label>
+          <select id="category-target" hidden></select>
+          <p id="category-error" class="error" role="alert"></p>
+          <div class="editor-actions">
+            <button id="remove-category" class="danger" type="button" hidden>Удалить раздел</button>
+            <button class="primary">Сохранить</button>
+          </div>
+        </fieldset>
       </form>
     </dialog>
 
