@@ -10,8 +10,9 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icon.png">
   <link rel="icon" href="icon.png">
-  <link rel="stylesheet" href="style.css?v=8">
-  <script src="app.js?v=8" defer></script>
+  <link rel="stylesheet" href="style.css?v=9">
+  <script src="offline.js?v=9" defer></script>
+  <script src="app.js?v=9" defer></script>
 </head>
 <body>
   <main>
@@ -55,6 +56,18 @@
         </div>
       </div>
       <nav id="sections" aria-label="Разделы задач"></nav>
+      <section id="sync-panel" aria-label="Синхронизация">
+        <p id="pending-status" class="muted" role="status"></p>
+        <p id="sync-error" class="error" role="alert"></p>
+        <div id="sync-actions" class="editor-actions" hidden>
+          <button id="discard-change" type="button" class="quiet">Отменить мои изменения</button>
+          <button id="retry-change" type="button" class="primary">Сохранить мою версию</button>
+        </div>
+      </section>
+      <section id="pinned-panel" aria-labelledby="pinned-heading" hidden>
+        <div class="list-header"><h2 id="pinned-heading">Закреплённые</h2></div>
+        <div id="pinned-tasks"></div>
+      </section>
       <div class="list-header">
         <h2 id="list-heading">Задачи</h2>
         <button id="add-task" class="primary">＋ Задача</button>
@@ -133,12 +146,15 @@
         <input id="title" required maxlength="500">
         <label for="category">Раздел</label>
         <select id="category" required></select>
-        <label for="task-day">Дата</label>
-        <input id="task-day" type="date" required min="2000-01-01" max="2100-12-31">
-        <div class="times">
-          <label>Начало <input id="start" type="time"></label>
-          <label>Окончание <input id="end" type="time"></label>
-        </div>
+        <label class="step-line"><input id="task-pinned" type="checkbox"> Закрепить до выполнения</label>
+        <fieldset id="task-schedule">
+          <label for="task-day">Дата</label>
+          <input id="task-day" type="date" required min="2000-01-01" max="2100-12-31">
+          <div class="times">
+            <label>Начало <input id="start" type="time"></label>
+            <label>Окончание <input id="end" type="time"></label>
+          </div>
+        </fieldset>
         <div class="list-header">
           <h3>Подзадачи</h3>
           <button id="add-step" type="button" class="quiet">＋ Добавить</button>

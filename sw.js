@@ -1,7 +1,7 @@
 "use strict";
 
-const cacheName = "jarvis-tasks-shell-v8";
-const files = ["./", "./index.html", "./style.css?v=8", "./app.js?v=8", "./manifest.webmanifest", "./icon.png"];
+const cacheName = "jarvis-tasks-shell-v9";
+const files = ["./", "./index.html", "./style.css?v=9", "./offline.js?v=9", "./app.js?v=9", "./manifest.webmanifest", "./icon.png"];
 const assetUrls = new Set(files.map(path => new URL(path, self.registration.scope).href));
 
 self.addEventListener("install", event => {

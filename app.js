@@ -45,6 +45,10 @@ function readKey(value) {
 let connection = isPlannerSite ? readKey(readStorage(keyName, "")) : null;
 let cachedDays = connection ? readStorage(cacheName, []) : [];
 if (!Array.isArray(cachedDays)) cachedDays = [];
+let calendar = offlineCalendar.empty();
+let calendarReady = false;
+let syncTask = null;
+let syncWarning = "";
 let selectedDay = today();
 let section = "";
 let renderedSections = "";
@@ -53,7 +57,6 @@ let cacheTime = 0;
 let online = false;
 let busy = false;
 let loading = false;
-let loadVersion = 0;
 let editing = null;
 let newTaskRequest = "";
 let categoryRequest = "";
@@ -82,9 +85,10 @@ class ApiError extends Error {
   }
 }
 
-async function api({day, mutation, credentials = connection, route = "tasks"} = {}) {
+async function api({day, mutation, credentials = connection, route = "tasks", includeAll = false} = {}) {
   const url = new URL(route, credentials.endpoint);
   if (day) url.searchParams.set("day", day);
+  if (includeAll) url.searchParams.set("include_all", "true");
   const headers = {Authorization: `Bearer ${credentials.secret}`, "ngrok-skip-browser-warning": "1"};
   if (mutation) headers["Content-Type"] = "application/json";
   const timer = new AbortController();
@@ -98,17 +102,37 @@ async function api({day, mutation, credentials = connection, route = "tasks"} = 
   } finally { clearTimeout(timeout); }
 }
 
-function remember(snapshot) {
-  const entry = {time: Date.now(), snapshot};
-  cachedDays = [entry, ...cachedDays.filter(item => item.snapshot.day !== snapshot.day)].slice(0, 10);
-  store(cacheName, cachedDays);
-  return entry.time;
+function legacyCalendar() {
+  const latest = cachedDays[0];
+  if (!latest) return {categories: {day: "Общее"}, all_items: []};
+  const items = new Map();
+  for (const entry of cachedDays) {
+    for (const row of entry.snapshot.items) if (!items.has(row.id)) items.set(row.id, row);
+  }
+  const {categories, category_revision, category_details, category_colors} = latest.snapshot;
+  return {categories, category_revision, category_details, category_colors, all_items: [...items.values()], savedAt: latest.time};
 }
 
-function restoreDay(day) {
-  const entry = cachedDays.find(item => item.snapshot.day === day);
-  snapshot = entry?.snapshot ?? null;
-  cacheTime = entry?.time ?? 0;
+function showCalendar() {
+  const base = calendar.base ?? legacyCalendar();
+  snapshot = offlineCalendar.view(calendar, base, selectedDay);
+  cacheTime = base.savedAt ?? 0;
+  render();
+}
+
+async function openCalendar(credentials) {
+  showCalendar();
+  try {
+    const saved = await offlineCalendar.access(credentials);
+    if (connection !== credentials) return;
+    calendar = saved;
+    calendarReady = true;
+    syncWarning = "";
+  } catch {
+    if (connection !== credentials) return;
+    syncWarning = "Хранилище телефона недоступно. Изменения задач пока сохранять нельзя.";
+  }
+  showCalendar();
 }
 
 function renderState() {
@@ -119,15 +143,25 @@ function renderState() {
   if (!connection) return;
   const last = cacheTime ? new Date(cacheTime).toLocaleTimeString("ru-RU", {hour: "2-digit", minute: "2-digit"}) : "";
   byId("status").textContent = online ? "Связь с Джарвисом" : loading ? "Подключаюсь…" :
-    last ? `Нет связи с Джарвисом · копия на ${last}` : "Нет связи с Джарвисом";
+    last ? `Офлайн · копия на ${last}` : "Нет связи с Джарвисом";
+  const count = calendar.queued.length;
+  const blocked = calendar.queued[0]?.problem;
+  byId("pending-status").textContent = count ? `Ожидают синхронизации: ${count}` : "";
+  byId("sync-error").textContent = blocked ? `«${calendar.queued[0].label}». ${blocked.message}` : syncWarning;
+  byId("sync-actions").hidden = !blocked;
+  byId("retry-change").hidden = blocked?.status !== 409 || !calendar.base?.all_items.some(row => row.id === calendar.queued[0]?.mutation.id);
+  byId("retry-change").disabled = busy || loading || !online;
+  byId("discard-change").disabled = busy || loading;
   byId("day").value = selectedDay;
-  byId("add-task").disabled = !online || busy || !snapshot;
+  byId("add-task").disabled = !calendarReady || busy;
   byId("show-categories").disabled = busy;
   byId("category-offline").hidden = online;
-  byId("category-fields").hidden = !snapshot;
-  byId("category-fields").disabled = !online || !snapshot;
-  if (byId("category-editor").open && snapshot && !categoryRequest) loadCategoryOptions();
-  byId("tasks").querySelectorAll("input, button").forEach(control => { control.disabled = !online || busy; });
+  byId("category-fields").hidden = !snapshot?.category_revision;
+  byId("category-fields").disabled = !online || !snapshot?.category_revision;
+  if (byId("category-editor").open && snapshot?.category_revision && !categoryRequest) loadCategoryOptions();
+  for (const list of ["tasks", "pinned-tasks"]) {
+    byId(list).querySelectorAll("input, button").forEach(control => { control.disabled = !calendarReady || busy; });
+  }
 }
 
 function sectionColor(key) {
@@ -209,7 +243,11 @@ function render() {
   if (section && snapshot && !snapshot.categories[section]) section = "";
   weekView();
   renderSections();
-  const rows = snapshot?.items.filter(row => !section || row.category === section) ?? [];
+  const visible = snapshot?.items.filter(row => !section || row.category === section) ?? [];
+  const pinned = visible.filter(row => row.pinned && !row.done);
+  const rows = visible.filter(row => !row.pinned || row.done);
+  byId("pinned-panel").hidden = !pinned.length;
+  byId("pinned-tasks").replaceChildren(...pinned.map(taskCard));
   byId("list-heading").textContent = rows.length ? `Задачи · ${rows.filter(row => row.done).length}/${rows.length}` : "Задачи";
   const empty = loading && !snapshot ? "Загружаю задачи…" : !snapshot ? "На эту дату нет сохранённой копии." : "На эту дату задач нет.";
   byId("tasks").replaceChildren(...(rows.length ? rows.map(taskCard) : [make("p", empty, "muted")]));
@@ -234,6 +272,7 @@ function taskCard(row) {
   const category = snapshot.categories[row.category];
   const meta = make("small", time);
   if (category) meta.append(time ? " · " : "", make("span", category, "task-section"));
+  if (row.pinned && row.done) meta.append(category ? " · " : "", "Закреплена");
   button.append(make("strong", row.text), meta);
   button.onclick = () => openEditor(row);
   line.append(label, button);
@@ -264,42 +303,114 @@ function selectDay(day, force = false) {
   if (!day || day < "2000-01-01" || day > "2100-12-31" || busy) return;
   if (day === selectedDay && !force) return;
   selectedDay = day;
-  restoreDay(day);
-  online = false;
   byId("list-error").textContent = "";
-  void sync(true);
+  showCalendar();
+  if (force) void sync();
 }
 
-async function sync(redraw = false) {
-  if (!connection) return;
-  const revision = ++loadVersion;
-  loading = true;
-  if (redraw) render();
-  try {
-    const next = await api({day: selectedDay});
-    if (revision !== loadVersion) return;
-    const changed = JSON.stringify(snapshot) !== JSON.stringify(next);
-    snapshot = next;
-    cacheTime = remember(next);
-    online = true;
-    loading = false;
-    if (changed || redraw) render();
-    else renderState();
-  } catch (error) {
-    if (revision !== loadVersion) return;
-    online = false;
-    loading = false;
-    if (error.status === 403) {
-      disconnect();
-      byId("connect-error").textContent = error.message;
+async function flushTasks(credentials) {
+  while (connection === credentials) {
+    const entry = calendar.queued[0];
+    if (!entry || entry.problem) return;
+    try {
+      const result = await api({credentials, mutation: {...entry.mutation, sync_id: entry.id}});
+      if (!result.ok || !Object.hasOwn(result, "item")) throw new Error("Не получено подтверждение синхронизации.");
+      if (connection !== credentials) return;
+      calendar = await offlineCalendar.access(credentials, state => offlineCalendar.acknowledge(state, entry, result));
+    } catch (error) {
+      if (![400, 409, 413].includes(error.status)) throw error;
+      if (connection !== credentials) return;
+      calendar = await offlineCalendar.access(credentials, state => {
+        if (state.queued[0]?.id === entry.id) state.queued[0].problem = {status: error.status, message: error.message};
+        return state;
+      });
       return;
     }
-    if (redraw) render();
-    else renderState();
   }
 }
 
+function sync() {
+  if (!connection || syncTask) return syncTask;
+  const credentials = connection;
+  syncTask = fetchCalendar(credentials).finally(() => { syncTask = null; });
+  return syncTask;
+}
+
+async function fetchCalendar(credentials) {
+  loading = true;
+  const previousAck = calendar.acknowledged;
+  renderState();
+  try {
+    if (calendarReady) {
+      calendar = await offlineCalendar.access(credentials);
+      if (connection !== credentials) return;
+      await flushTasks(credentials);
+    }
+    const acknowledged = calendar.acknowledged;
+    const next = await api({day: selectedDay, credentials, includeAll: true});
+    if (connection !== credentials) return;
+    if (!Array.isArray(next.all_items)) throw new Error("Джарвис не вернул полный список задач.");
+    const {items, week, ...metadata} = next;
+    const base = {...metadata, savedAt: Date.now()};
+    if (calendarReady) {
+      calendar = await offlineCalendar.access(credentials, state =>
+        state.acknowledged === acknowledged ? {...state, base} : state);
+    } else {
+      calendar.base = base;
+    }
+    if (connection !== credentials) return;
+    online = true;
+    if (calendarReady) syncWarning = "";
+  } catch (error) {
+    if (connection !== credentials) return;
+    online = false;
+    if (error.status === 403) {
+      syncWarning = "Джарвис отклонил подключение. Проверь ключ на ПК.";
+    }
+  } finally {
+    if (connection === credentials) {
+      loading = false;
+      showCalendar();
+      if (calendar.acknowledged !== previousAck) void syncNotices();
+    }
+  }
+}
+
+async function queueTask(mutation, errorId) {
+  if (!calendarReady || busy) return false;
+  const credentials = connection;
+  busy = true;
+  byId(errorId).textContent = "";
+  renderState();
+  try {
+    if (new TextEncoder().encode(JSON.stringify(mutation)).length > 16000) {
+      throw new Error("Сократи текст подзадач, чтобы сохранить задачу.");
+    }
+    calendar = await offlineCalendar.access(credentials, state => {
+      const base = state.base ?? legacyCalendar();
+      const rows = offlineCalendar.rows(state, base);
+      const item = rows.find(row => row.id === mutation.id);
+      if (mutation.operation === "create" && rows.length >= 500) throw new Error("В задачнике уже 500 записей.");
+      if (mutation.operation !== "create" && item?.revision !== mutation.revision) {
+        throw new Error("Задача изменилась. Открой её ещё раз.");
+      }
+      const entry = {id: crypto.randomUUID(), mutation, label: mutation.text ?? item?.text};
+      return {...state, base, queued: [...state.queued, entry]};
+    });
+  } catch (error) {
+    byId(errorId).textContent = error instanceof TypeError || error instanceof DOMException ?
+      "Телефон не сохранил изменение. Проверь доступное место и повтори." : error.message;
+    return false;
+  } finally {
+    busy = false;
+    showCalendar();
+  }
+  void sync();
+  return true;
+}
+
 async function change(mutation, errorId = "list-error", route = "tasks", form = byId("editor")) {
+  if (route === "tasks") return queueTask(mutation, errorId);
   if (!online || busy) return false;
   busy = true;
   byId(errorId).textContent = "";
@@ -309,7 +420,6 @@ async function change(mutation, errorId = "list-error", route = "tasks", form = 
   try {
     await api({mutation, route});
     await sync();
-    if (route === "tasks") void syncNotices();
     return true;
   } catch (error) {
     byId(errorId).textContent = error instanceof ApiError ? error.message : "Связь прервалась. Проверь список и повтори при необходимости.";
@@ -323,7 +433,7 @@ async function change(mutation, errorId = "list-error", route = "tasks", form = 
 }
 
 function openEditor(row) {
-  if (!snapshot || !online || busy) return;
+  if (!snapshot || !calendarReady || busy) return;
   editing = row || null;
   newTaskRequest = crypto.randomUUID();
   byId("editor-title").textContent = row ? "Редактировать задачу" : "Новая задача";
@@ -331,6 +441,8 @@ function openEditor(row) {
   byId("task-day").value = row?.planned_date ?? selectedDay;
   byId("start").value = row?.time ?? "";
   byId("end").value = row?.end_time ?? "";
+  byId("task-pinned").checked = Boolean(row?.pinned);
+  updateScheduleFields();
   byId("category").replaceChildren(...Object.entries(snapshot.categories).map(([key, name]) => {
     const option = make("option", name);
     option.value = key;
@@ -342,6 +454,12 @@ function openEditor(row) {
   byId("remove-task").hidden = !row;
   byId("edit-error").textContent = "";
   byId("editor").showModal();
+}
+
+function updateScheduleFields() {
+  const pinned = byId("task-pinned").checked;
+  byId("task-schedule").hidden = pinned;
+  byId("task-schedule").disabled = pinned;
 }
 
 function addStep(step = {id: crypto.randomUUID(), text: "", done: false}) {
@@ -635,10 +753,13 @@ async function runWorkflow(action) {
 }
 
 function disconnect() {
-  ++loadVersion;
+  const credentials = connection;
   connection = null;
   snapshot = null;
   cachedDays = [];
+  calendar = offlineCalendar.empty();
+  calendarReady = false;
+  syncWarning = "";
   notices = null;
   workflowSnapshot = null;
   workflowAvailable = null;
@@ -658,6 +779,7 @@ function disconnect() {
   updatePushControls();
   try { localStorage.removeItem(keyName); localStorage.removeItem(cacheName); }
   catch { /* No locally persisted session to clear. */ }
+  if (credentials) void offlineCalendar.access(credentials, () => null).catch(() => {});
   renderState();
 }
 
@@ -675,15 +797,29 @@ byId("connect-form").onsubmit = async event => {
   button.disabled = true;
   errorText.textContent = "";
   try {
-    snapshot = await api({credentials: candidate});
+    const next = await api({credentials: candidate, includeAll: true});
+    if (!Array.isArray(next.all_items)) throw new Error("Не загружен полный список задач.");
     connection = candidate;
-    selectedDay = snapshot.day;
+    selectedDay = next.day;
     cachedDays = [];
     store(keyName, value);
-    cacheTime = remember(snapshot);
+    await openCalendar(candidate);
+    const {items, week, ...metadata} = next;
+    const base = {...metadata, savedAt: Date.now()};
+    if (calendarReady) {
+      try {
+        calendar = await offlineCalendar.access(candidate, state => ({...state, base}));
+      } catch {
+        calendarReady = false;
+        calendar.base = base;
+        syncWarning = "Телефон не сохранил копию задач. Проверь доступное место.";
+      }
+    } else {
+      calendar.base = base;
+    }
     input.value = "";
     online = true;
-    render();
+    showCalendar();
     void syncNotices();
     if (new URLSearchParams(location.search).get("view") === "notices") openNotices();
   } catch (error) {
@@ -698,6 +834,8 @@ byId("day").onchange = event => selectDay(event.target.value);
 byId("add-task").onclick = () => openEditor();
 byId("add-step").onclick = () => addStep()?.focus();
 byId("disconnect").onclick = async () => {
+  if (busy || !calendarReady && !calendar.base) return;
+  if (calendar.queued.length && !confirm("Выйти и удалить изменения, которые ещё не переданы на ПК?")) return;
   if (busy || noticeBusy) return;
   const registration = await navigator.serviceWorker?.getRegistration().catch(() => null);
   const device = await registration?.pushManager?.getSubscription().catch(() => null);
@@ -707,6 +845,37 @@ byId("disconnect").onclick = async () => {
   }
   disconnect();
 };
+byId("task-pinned").onchange = updateScheduleFields;
+
+async function resolvePending(discard) {
+  if (!connection || busy || loading) return;
+  const entry = calendar.queued[0];
+  if (!entry?.problem) return;
+  if (discard && !confirm(`Отменить несинхронизированные изменения задачи «${entry.label}»?`)) return;
+  busy = true;
+  renderState();
+  try {
+    calendar = await offlineCalendar.access(connection, state => {
+      if (state.queued[0]?.id !== entry.id) return state;
+      const id = offlineCalendar.taskId(entry);
+      if (discard) return {...state, queued: state.queued.filter(next => offlineCalendar.taskId(next) !== id)};
+      const baseRow = state.base.all_items.find(row => row.id === id);
+      if (!baseRow) return state;
+      let revision = baseRow.revision;
+      return {...state, queued: state.queued.map(next => offlineCalendar.taskId(next) === id ?
+        {...next, problem: null, mutation: {...next.mutation, revision: revision++}} : next)};
+    });
+  } catch {
+    syncWarning = "Телефон не сохранил действие. Попробуй ещё раз.";
+  } finally {
+    busy = false;
+    showCalendar();
+  }
+  void sync();
+}
+
+byId("retry-change").onclick = () => resolvePending(false);
+byId("discard-change").onclick = () => resolvePending(true);
 byId("reload").onclick = async () => {
   byId("reload").disabled = true;
   try {
@@ -778,9 +947,16 @@ byId("task-form").onsubmit = async event => {
   const identity = editing ? {operation: "update", id: editing.id, revision: editing.revision} :
     {operation: "create", request_id: newTaskRequest};
   const day = byId("task-day").value;
+  const pinned = byId("task-pinned").checked;
+  const time = pinned ? "" : byId("start").value;
+  const endTime = pinned ? "" : byId("end").value;
+  if (endTime && (!time || endTime <= time)) {
+    byId("edit-error").textContent = "Укажи начало и время окончания позже него.";
+    return;
+  }
   const saved = await change({...identity, text, day, subtasks, category: byId("category").value,
-    time: byId("start").value, end_time: byId("end").value}, "edit-error");
-  if (saved) { byId("editor").close(); selectDay(day); }
+    pinned, time, end_time: endTime}, "edit-error");
+  if (saved) { byId("editor").close(); if (!pinned) selectDay(day); }
 };
 
 const refresh = () => {
@@ -793,14 +969,14 @@ document.addEventListener("visibilitychange", refresh);
 window.addEventListener("online", refresh);
 window.addEventListener("focus", refresh);
 setInterval(refresh, 60000);
+setInterval(() => { if (calendar.queued.length && !calendar.queued[0].problem) refresh(); }, 15000);
 setInterval(() => { if (!document.hidden) void syncNotices(); }, 15000);
 setInterval(() => { if (!document.hidden) void syncWorkflows(); }, 4000);
 
 if (!isPlannerSite) {
   byId("status").textContent = "Открой задачник по адресу tasks.voxforma.ru.";
 } else if (connection) {
-  restoreDay(selectedDay);
-  void sync(true);
+  void openCalendar(connection).then(sync);
   void syncNotices();
   if (new URLSearchParams(location.search).get("view") === "notices") openNotices();
 } else {
